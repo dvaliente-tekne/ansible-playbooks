@@ -10,29 +10,6 @@ readonly SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 readonly LOG_FILE="/tmp/prep_$(date '+%Y%m%d_%H%M%S').log"
 readonly VALID_HOSTS=("ASTER" "THEMIS" "HEPHAESTUS" "YUGEN")
 
-# Ansible roles to download (common - all hosts)
-readonly ANSIBLE_ROLES_COMMON=(
-    "https://github.com/dvaliente-tekne/ansible-role-bootstrap"
-    "https://github.com/dvaliente-tekne/ansible-role-docker"
-    "https://github.com/dvaliente-tekne/ansible-role-gaming"
-    "https://github.com/dvaliente-tekne/ansible-role-gpu"
-    "https://github.com/dvaliente-tekne/ansible-role-haproxy"
-    "https://github.com/dvaliente-tekne/ansible-role-hostname"
-    "https://github.com/dvaliente-tekne/ansible-role-libvirt"
-    "https://github.com/dvaliente-tekne/ansible-role-nftables"
-    "https://github.com/dvaliente-tekne/ansible-role-onedrive"
-    "https://github.com/dvaliente-tekne/ansible-role-os"
-    "https://github.com/dvaliente-tekne/ansible-role-pipewire"
-    "https://github.com/dvaliente-tekne/ansible-role-repotekne"
-    "https://github.com/dvaliente-tekne/ansible-role-user"
-    "https://github.com/dvaliente-tekne/ansible-role-xfce4"
-)
-
-# Ansible roles for workstations (ASTER and YUGEN only)
-readonly ANSIBLE_ROLES_WORKSTATION=(
-    "https://github.com/dvaliente-tekne/ansible-role-gpu"
-)
-
 # F2FS constants
 readonly F2FS_MOUNT_OPTS='compress_algorithm=zstd:6,compress_chksum,atgc,gc_merge,lazytime'
 readonly F2FS_MKFS_OPTS='extra_attr,inode_checksum,sb_checksum,compression'
@@ -136,59 +113,6 @@ wait_for_network() {
     error "No network connectivity after $max_attempts attempts. Check your connection."
 }
 
-clone_or_update_role() {
-    local repo_url="$1"
-    local roles_dir="$2"
-    local repo_name
-    repo_name=$(basename "$repo_url")
-    local target_dir="${roles_dir}/${repo_name}"
-    
-    if [[ -d "$target_dir" ]]; then
-        log "Role '$repo_name' already exists, pulling latest..."
-        if ! git -C "$target_dir" pull --rebase -q; then
-            error "Failed to update '$repo_name'. Cannot continue without roles."
-        fi
-        log "Role '$repo_name' updated."
-    else
-        log "Cloning '$repo_name' from $repo_url ..."
-        if ! git clone "$repo_url" "$target_dir"; then
-            error "Failed to clone '$repo_name'. Cannot continue without roles."
-        fi
-        log "Role '$repo_name' cloned successfully."
-    fi
-}
-
-download_ansible_roles() {
-    log "Downloading Ansible roles from GitHub..."
-
-    # Ensure git is available before attempting to clone/pull repos
-    if ! command -v git &>/dev/null; then
-        log "git not found, installing..."
-        if ! pacman -Sy --noconfirm git; then
-            error "Failed to install git. Cannot download Ansible roles."
-        fi
-    fi
-    
-    local roles_dir="${SCRIPT_DIR}/roles"
-    mkdir -p "$roles_dir"
-    
-    # Download common roles (all hosts)
-    log "Downloading common roles..."
-    for repo_url in "${ANSIBLE_ROLES_COMMON[@]}"; do
-        clone_or_update_role "$repo_url" "$roles_dir"
-    done
-    
-    # Download workstation roles (ASTER and YUGEN only)
-    if [[ "$host" == "ASTER" || "$host" == "YUGEN" ]]; then
-        log "Downloading workstation roles for $host..."
-        for repo_url in "${ANSIBLE_ROLES_WORKSTATION[@]}"; do
-            clone_or_update_role "$repo_url" "$roles_dir"
-        done
-    fi
-    
-    log "Ansible roles downloaded to: $roles_dir"
-}
-
 validate_host() {
     local input_host="$1"
     for valid in "${VALID_HOSTS[@]}"; do
@@ -217,7 +141,6 @@ set_host_config() {
             connect_wifi
             wait_for_network
             post_pacmanconf
-            download_ansible_roles
             ;;
         THEMIS)
             arr_drives=('nvme0' 'nvme1' 'sda' 'sdb')
@@ -230,7 +153,6 @@ set_host_config() {
             mcode=''
             wait_for_network
             post_pacmanconf
-            download_ansible_roles
             ;;
         HEPHAESTUS)
             arr_drives=('sda' 'md126')
@@ -244,7 +166,6 @@ set_host_config() {
             connect_wifi
             wait_for_network
             post_pacmanconf
-            download_ansible_roles
             ;;
         YUGEN)
             arr_drives=('nvme0' 'nvme1' 'nvme2')
@@ -258,7 +179,6 @@ set_host_config() {
             # YUGEN has no WiFi - requires Ethernet
             wait_for_network
             post_pacmanconf
-            download_ansible_roles
             ;;
         *)
             error "Unknown host: '$host'. Valid hosts: ${VALID_HOSTS[*]}"
@@ -611,18 +531,28 @@ mkinitcpio -p ${kernel}
 echo "Automated chroot configuration complete."
 CHROOT_EOF
 
-    # Run ansible-role-user and ansible-role-xfce4 for ASTER and YUGEN
-    if [[ "$host" == "ASTER" || "$host" == "YUGEN" ]]; then
-        log "Running ansible-role-user and ansible-role-xfce4 for $host..."
-        # Minimal ansible.cfg so roles_path and inventory work inside chroot (paths are chroot-relative)
-        log "Installing Ansible community.general collection in chroot (required by ansible-role-xfce4)..."
-        arch-chroot /mnt ansible-galaxy collection install community.general --force
-        arch-chroot /mnt bash /media/ansible-playbook/archlinux/chroot.sh
-        log "Ansible roles user and xfce4 completed for $host."
-    fi
+    log "Running ansible for $host..."
+    # Task 1: Install collections and overall requirements for ansible-playbook to run
+    log "Installing Ansible community.general collection in chroot (required by ansible-role-xfce4)..."
+    arch-chroot /mnt ansible-galaxy collection install community.general --force
+    arch-chroot /mnt ansible-galaxy collection install -r /media/ansible-playbooks/requirements.yml -p /media/ansible-playbooks/collections
+    log "Installing Ansible community.general and requirements... completed"
+    
+    # Task 2: Run ansible-role-user, ansible-role-gpu, for all hosts
+    log "Ansible roles user and gpu running..."
+    arch-chroot /mnt ansible-playbook /media/ansible-playbooks/main.yml --tags user,gpu --ask-vault-pass -e@/media/ansible-playbooks/group_vars_all/vault
+    log "Ansible roles user and gpu completed."
 
-    log "Entering interactive chroot for password setup..."
-    arch-chroot /mnt
+    # Task 3: Run ansible-role-xfce4 for ASTER and YUGEN only
+    if [[ "$host" == "ASTER" || "$host" == "YUGEN" ]]; then
+        log "Running ansible roles xfce4 for $host..."
+        arch-chroot /mnt ansible-playbook /media/ansible-playbooks/main.yml --tags xfce4 --ask-vault-pass -e@/media/ansible-playbooks/group_vars_all/vault
+        log "Ansible roles xfce4 completed for $host."
+    fi
+    log "Running ansible for $host... completed."
+
+    # log "Entering interactive chroot for password setup..."
+    # arch-chroot /mnt
 }
 
 # ============================================================================

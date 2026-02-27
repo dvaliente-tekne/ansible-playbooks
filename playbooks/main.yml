@@ -95,15 +95,15 @@
 
     - role: tekne.devops.bootstrap
       tags: [bootstrap]
-
+  
+    - role: tekne.devops.nftables
+      tags: [nftables]
+  
     - role: tekne.devops.docker
       tags: [docker]
 
     - role: tekne.devops.libvirt
       tags: [libvirt]
-
-    - role: tekne.devops.nftables
-      tags: [nftables]
 
     - role: tekne.devops.haproxy
       tags: [haproxy]

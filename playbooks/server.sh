@@ -1,4 +1,3 @@
 #!/bin/bash
 
-# sudo ansible-playbook main.yml --tags os,docker,libvirt,nftables,haproxy,repotekne --ask-vault-pass -e@vault
-sudo ansible-playbook main.yml --tags gerbera --ask-vault-pass -e@vault
+sudo ansible-playbook main.yml --tags os, pipewire, nftables, docker, libvirt, haproxy, repotekne, gerbera --ask-vault-pass -e@vault

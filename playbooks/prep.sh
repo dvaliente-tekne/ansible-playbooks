@@ -136,17 +136,17 @@ set_host_config() {
             arr_filesystems=('nvme0n1p2' 'nvme0n1p1')
             lbaf=0
             ses=1
-            kernel='linux-tkg-alk'
+            kernel='-tkg-aster'
             mcode='schedtoold pikaur sof-firmware laptop-mode-tools-git upd72020x-fw wd719x-firmware ast-firmware aic94xx-firmware blesh-git pikaur'
             connect_wifi
             wait_for_network
             post_pacmanconf
             ;;
         THEMIS)
-            arr_drives=('nvme0' 'nvme1' 'sda' 'sdb')
-            arr_partitions=('nvme0n1' 'nvme1n1' 'sda' 'sdb')
-            arr_mkfs=('nvme0n1p1' 'nvme1n1p1' 'nvme1n1p2' 'sda1' 'sda2' 'sdb1')
-            arr_filesystems=('sda2' 'sda1' 'nvme1n1p1' 'nvme1n1p2' 'sdb1' 'nvme0n1p1')
+            arr_drives=('nvme0' 'nvme1' 'sda') # 'sdb'
+            arr_partitions=('nvme0n1' 'nvme1n1' 'sda') # 'sdb'
+            arr_mkfs=('nvme0n1p1' 'nvme1n1p1' 'nvme1n1p2' 'sda1' 'sda2') # 'sdb1'
+            arr_filesystems=('sda2' 'sda1' 'nvme1n1p1' 'nvme1n1p2' 'nvme0n1p1') # 'sdb1'
             lbaf=0
             ses=1
             kernel='linux'
@@ -174,7 +174,7 @@ set_host_config() {
             arr_filesystems=('nvme0n1p2' 'nvme0n1p1' 'nvme1n1p1' 'nvme2n1p1')
             lbaf=1
             ses=2
-            kernel='linux-tkg-ntl'
+            kernel='-tkg-yugen'
             mcode='upd72020x-fw wd719x-firmware ast-firmware aic94xx-firmware blesh-git pikaur'
             # YUGEN has no WiFi - requires Ethernet
             wait_for_network
@@ -232,7 +232,7 @@ EOF
     if [[ "$host" != 'THEMIS' ]]; then
         cat << 'EOF' >> /etc/pacman.conf
 
-[themis]
+[tekne]
 SigLevel = Optional TrustAll
 Server = http://repo.tekne.sv
 EOF
@@ -522,11 +522,11 @@ echo 'KEYMAP=us' > /etc/vconsole.conf
     --part 1 \
     --create \
     --label BOOT \
-    --loader /vmlinuz-${kernel} \
-    --unicode " root=LABEL=ROOT rw initrd=\intel-ucode.img initrd=\initramfs-${kernel}.img enable_guc=3 intel_pstate=passive kernel.split_lock_mitigate=0 split_lock_detect=off nowatchdog mitigations=off quiet loglevel=2 systemd.show_status=false rd.udev.log_level=2"
+    --loader /vmlinuz-linux${kernel} \
+    --unicode " root=LABEL=ROOT rw initrd=\intel-ucode.img initrd=\initramfs-linux${kernel}.img enable_guc=3 intel_pstate=passive kernel.split_lock_mitigate=0 split_lock_detect=off nowatchdog mitigations=off quiet loglevel=2 systemd.show_status=false rd.udev.log_level=2"
 
 # Generate initramfs
-mkinitcpio -p ${kernel}
+mkinitcpio -p linux${kernel}
 
 echo "Automated chroot configuration complete."
 CHROOT_EOF
@@ -577,7 +577,7 @@ post_start() {
 
     log "Installing base system with pacstrap..."
     /usr/bin/pacstrap -K /mnt base base-devel \
-        intel-ucode $mcode $kernel "${kernel}-headers" \
+        intel-ucode $mcode $kernel "linux${kernel}-headers" \
         linux-firmware linux-firmware-broadcom linux-firmware-liquidio linux-firmware-mellanox \
         linux-firmware-nfp linux-firmware-qlogic \
         dosfstools f2fs-tools exfatprogs exfat-utils \
